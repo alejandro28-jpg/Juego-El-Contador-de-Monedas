@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cazador de Monedas - Batalla de Disparos</title>
+    <title>Cazador de Monedas - Aventura de Recolección</title>
     <style>
         * {
             box-sizing: border-box;
@@ -135,10 +135,10 @@
             box-shadow: 0 6px 20px rgba(99, 102, 241, 0.6);
         }
 
+        /* Controles táctiles en pantalla */
         .controls {
             display: flex;
             justify-content: space-between;
-            align-items: center;
             padding: 10px 20px;
             background: #0f172a;
         }
@@ -166,18 +166,393 @@
         .touch-btn:active {
             background: #6366f1;
         }
+    </style>
+</head>
+<body>
 
-        .shoot-btn {
-            background: linear-gradient(135deg, #ef4444, #dc2626);
-            color: white;
-            border: none;
-            border-radius: 12px;
-            padding: 12px 24px;
-            font-size: 1rem;
-            font-weight: bold;
-            cursor: pointer;
-            box-shadow: 0 4px 10px rgba(239, 68, 68, 0.4);
+<div id="game-container">
+    <header>
+        <div class="stat-box">
+            <span class="stat-icon">🪙</span>
+            <span id="score">0</span>
+        </div>
+        <div class="stat-box">
+            <span class="stat-icon">🎯</span>
+            <span id="target">0</span>
+        </div>
+        <div class="progress-container">
+            <div id="progress" class="progress-bar"></div>
+        </div>
+        <div class="stat-box">
+            <span class="stat-icon">❤️</span>
+            <span id="lives">3</span>
+        </div>
+        <div class="stat-box">
+            <span id="stage-name" style="color: #60a5fa;">Bosque</span>
+        </div>
+    </header>
+
+    <canvas id="canvas" width="800" height="450"></canvas>
+
+    <!-- Pantalla Inicial -->
+    <div id="start-screen" class="overlay">
+        <h1>Cazador de Monedas</h1>
+        <p>Avanza por 4 escenarios distintos, junta monedas brillantes y esquiva los obstáculos para completar los objetivos.</p>
+        <button class="btn" onclick="startGame()">¡EMPEZAR JUEGO!</button>
+    </div>
+
+    <!-- Pantalla de Nivel Completado -->
+    <div id="stage-screen" class="overlay hidden">
+        <h1 id="stage-title">¡Escenario Completado!</h1>
+        <p id="stage-desc">¡Excelente trabajo recolectando tesoros!</p>
+        <button class="btn" onclick="nextStage()">SIGUIENTE ESCENARIO</button>
+    </div>
+
+    <!-- Pantalla de Game Over -->
+    <div id="gameover-screen" class="overlay hidden">
+        <h1 style="background: linear-gradient(45deg, #ef4444, #dc2626); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">¡Juego Terminado!</h1>
+        <p>Haz perdido todas tus vidas. ¿Quieres intentarlo de nuevo?</p>
+        <button class="btn" onclick="restartGame()">REINTENTAR</button>
+    </div>
+
+    <!-- Pantalla de Victoria Final -->
+    <div id="win-screen" class="overlay hidden">
+        <h1 style="background: linear-gradient(45deg, #10b981, #059669); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">¡VICTORIA TOTAL!</h1>
+        <p>¡Has recolectado todos los tesoros de los 4 mundos!</p>
+        <button class="btn" onclick="restartGame()">JUGAR DE NUEVO</button>
+    </div>
+
+    <!-- Controles en Pantalla -->
+    <div class="controls">
+        <div class="d-pad">
+            <div></div>
+            <div class="touch-btn" id="btn-up">▲</div>
+            <div></div>
+            <div class="touch-btn" id="btn-left">◀</div>
+            <div class="touch-btn" id="btn-down">▼</div>
+            <div class="touch-btn" id="btn-right">▶</div>
+        </div>
+        <div style="font-size: 0.85rem; color: #64748b; align-self: center;">
+            Usa las flechas del teclado o <b>WASD</b> para moverte
+        </div>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+
+    // Elementos de UI
+    const scoreEl = document.getElementById('score');
+    const targetEl = document.getElementById('target');
+    const progressEl = document.getElementById('progress');
+    const livesEl = document.getElementById('lives');
+    const stageNameEl = document.getElementById('stage-name');
+
+    // Configuración de los Escenarios
+    const stages = [
+        { name: "1. Bosque Frondoso", target: 50, bg: "#15803d", enemyColor: "#dc2626", obstacleSpeed: 2 },
+        { name: "2. Playa Tropical", target: 120, bg: "#0284c7", enemyColor: "#ea580c", obstacleSpeed: 3 },
+        { name: "3. Ciudad Neon", target: 200, bg: "#312e81", enemyColor: "#ec4899", obstacleSpeed: 4 },
+        { name: "4. Galaxia Estelar", target: 300, bg: "#09090b", enemyColor: "#a855f7", obstacleSpeed: 5 }
+    ];
+
+    let currentStage = 0;
+    let score = 0;
+    let lives = 3;
+    let gameActive = false;
+    let animationId;
+
+    // Jugador
+    const player = {
+        x: 400,
+        y: 225,
+        radius: 16,
+        speed: 4.5,
+        dx: 0,
+        dy: 0,
+        color: '#6366f1'
+    };
+
+    // Coleccionables y Enemigos
+    let coins = [];
+    let enemies = [];
+    let particles = [];
+
+    // Manejo de Teclas
+    const keys = {};
+
+    window.addEventListener('keydown', e => keys[e.key] = true);
+    window.addEventListener('keyup', e => keys[e.key] = false);
+
+    // Soporte Táctil / Botones en pantalla
+    const bindTouch = (id, key) => {
+        const btn = document.getElementById(id);
+        btn.addEventListener('touchstart', (e) => { e.preventDefault(); keys[key] = true; });
+        btn.addEventListener('touchend', (e) => { e.preventDefault(); keys[key] = false; });
+        btn.addEventListener('mousedown', () => keys[key] = true);
+        btn.addEventListener('mouseup', () => keys[key] = false);
+    };
+
+    bindTouch('btn-up', 'ArrowUp');
+    bindTouch('btn-down', 'ArrowDown');
+    bindTouch('btn-left', 'ArrowLeft');
+    bindTouch('btn-right', 'ArrowRight');
+
+    function startGame() {
+        document.getElementById('start-screen').classList.add('hidden');
+        resetGameStats();
+        initStage();
+        gameActive = true;
+        gameLoop();
+    }
+
+    function resetGameStats() {
+        score = 0;
+        lives = 3;
+        currentStage = 0;
+        updateUI();
+    }
+
+    function initStage() {
+        player.x = canvas.width / 2;
+        player.y = canvas.height / 2;
+
+        const stage = stages[currentStage];
+        stageNameEl.textContent = stage.name;
+        targetEl.textContent = stage.target;
+
+        // Generar Monedas
+        coins = [];
+        for (let i = 0; i < 8; i++) {
+            spawnCoin();
         }
 
-        .shoot-btn:active {
-            transform: scale
+        // Generar Enemigos
+        enemies = [];
+        for (let i = 0; i < 3 + currentStage * 2; i++) {
+            spawnEnemy();
+        }
+    }
+
+    function spawnCoin() {
+        const types = [
+            { value: 1, color: '#cd7f32', radius: 10, prob: 0.5 },  // Bronce
+            { value: 3, color: '#e2e8f0', radius: 12, prob: 0.8 },  // Plata
+            { value: 5, color: '#fbbf24', radius: 14, prob: 0.95 }, // Oro
+            { value: 10, color: '#38bdf8', radius: 16, prob: 1.0 }  // Gema
+        ];
+        const rand = Math.random();
+        const type = types.find(t => rand <= t.prob);
+
+        coins.push({
+            x: Math.random() * (canvas.width - 60) + 30,
+            y: Math.random() * (canvas.height - 60) + 30,
+            ...type,
+            pulse: Math.random() * Math.PI
+        });
+    }
+
+    function spawnEnemy() {
+        const speed = stages[currentStage].obstacleSpeed;
+        enemies.push({
+            x: Math.random() * (canvas.width - 60) + 30,
+            y: Math.random() * (canvas.height - 60) + 30,
+            radius: 14,
+            dx: (Math.random() - 0.5) * speed * 2,
+            dy: (Math.random() - 0.5) * speed * 2,
+            color: stages[currentStage].enemyColor
+        });
+    }
+
+    function createParticles(x, y, color) {
+        for (let i = 0; i < 10; i++) {
+            particles.push({
+                x, y,
+                dx: (Math.random() - 0.5) * 6,
+                dy: (Math.random() - 0.5) * 6,
+                radius: Math.random() * 4 + 1,
+                color,
+                life: 20
+            });
+        }
+    }
+
+    function update() {
+        if (!gameActive) return;
+
+        // Movimiento del Jugador
+        player.dx = 0;
+        player.dy = 0;
+
+        if (keys['ArrowUp'] || keys['w'] || keys['W']) player.dy = -player.speed;
+        if (keys['ArrowDown'] || keys['s'] || keys['S']) player.dy = player.speed;
+        if (keys['ArrowLeft'] || keys['a'] || keys['A']) player.dx = -player.speed;
+        if (keys['ArrowRight'] || keys['d'] || keys['D']) player.dx = player.speed;
+
+        player.x = Math.max(player.radius, Math.min(canvas.width - player.radius, player.x + player.dx));
+        player.y = Math.max(player.radius, Math.min(canvas.height - player.radius, player.y + player.dy));
+
+        // Actualizar Enemigos
+        enemies.forEach(e => {
+            e.x += e.dx;
+            e.y += e.dy;
+
+            if (e.x - e.radius < 0 || e.x + e.radius > canvas.width) e.dx *= -1;
+            if (e.y - e.radius < 0 || e.y + e.radius > canvas.height) e.dy *= -1;
+
+            // Colisión con Jugador
+            const dist = Math.hypot(player.x - e.x, player.y - e.y);
+            if (dist < player.radius + e.radius) {
+                lives--;
+                createParticles(player.x, player.y, '#ef4444');
+                player.x = canvas.width / 2;
+                player.y = canvas.height / 2;
+                updateUI();
+
+                if (lives <= 0) {
+                    gameOver();
+                }
+            }
+        });
+
+        // Colisión con Monedas
+        coins.forEach((c, index) => {
+            c.pulse += 0.05;
+            const dist = Math.hypot(player.x - c.x, player.y - c.y);
+
+            if (dist < player.radius + c.radius) {
+                score += c.value;
+                createParticles(c.x, c.y, c.color);
+                coins.splice(index, 1);
+                spawnCoin();
+                updateUI();
+
+                // Verificar si se completó la meta del escenario
+                if (score >= stages[currentStage].target) {
+                    completeStage();
+                }
+            }
+        });
+
+        // Actualizar Partículas
+        particles.forEach((p, index) => {
+            p.x += p.dx;
+            p.y += p.dy;
+            p.life--;
+            if (p.life <= 0) particles.splice(index, 1);
+        });
+    }
+
+    function updateUI() {
+        scoreEl.textContent = score;
+        livesEl.textContent = lives;
+        const stageTarget = stages[currentStage].target;
+        const prevTarget = currentStage > 0 ? stages[currentStage - 1].target : 0;
+        const progress = Math.min(100, Math.max(0, ((score - prevTarget) / (stageTarget - prevTarget)) * 100));
+        progressEl.style.width = `${progress}%`;
+    }
+
+    function draw() {
+        // Limpiar Canvas y dibujar Fondo del Escenario
+        ctx.fillStyle = stages[currentStage].bg;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Cuadrícula estética
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+        ctx.lineWidth = 1;
+        for (let x = 0; x < canvas.width; x += 40) {
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, canvas.height);
+            ctx.stroke();
+        }
+        for (let y = 0; y < canvas.height; y += 40) {
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(canvas.width, y);
+            ctx.stroke();
+        }
+
+        // Dibujar Monedas
+        coins.forEach(c => {
+            const scale = 1 + Math.sin(c.pulse) * 0.1;
+            ctx.fillStyle = c.color;
+            ctx.beginPath();
+            ctx.arc(c.x, c.y, c.radius * scale, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        });
+
+        // Dibujar Enemigos
+        enemies.forEach(e => {
+            ctx.fillStyle = e.color;
+            ctx.beginPath();
+            ctx.arc(e.x, e.y, e.radius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        });
+
+        // Dibujar Partículas
+        particles.forEach(p => {
+            ctx.fillStyle = p.color;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+            ctx.fill();
+        });
+
+        // Dibujar Jugador
+        ctx.fillStyle = player.color;
+        ctx.beginPath();
+        ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+    }
+
+    function gameLoop() {
+        update();
+        draw();
+        if (gameActive) {
+            animationId = requestAnimationFrame(gameLoop);
+        }
+    }
+
+    function completeStage() {
+        gameActive = false;
+        cancelAnimationFrame(animationId);
+
+        if (currentStage < stages.length - 1) {
+            document.getElementById('stage-screen').classList.remove('hidden');
+        } else {
+            document.getElementById('win-screen').classList.remove('hidden');
+        }
+    }
+
+    function nextStage() {
+        document.getElementById('stage-screen').classList.add('hidden');
+        currentStage++;
+        initStage();
+        gameActive = true;
+        gameLoop();
+    }
+
+    function gameOver() {
+        gameActive = false;
+        cancelAnimationFrame(animationId);
+        document.getElementById('gameover-screen').classList.remove('hidden');
+    }
+
+    function restartGame() {
+        document.getElementById('gameover-screen').classList.add('hidden');
+        document.getElementById('win-screen').classList.add('hidden');
+        startGame();
+    }
+</script>
+</body>
+</html>
