@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cazador de Monedas - Aventura de Recolección</title>
+    <title>Cazador de Monedas - Con Disparos</title>
     <style>
         * {
             box-sizing: border-box;
@@ -139,6 +139,7 @@
         .controls {
             display: flex;
             justify-content: space-between;
+            align-items: center;
             padding: 10px 20px;
             background: #0f172a;
         }
@@ -165,6 +166,22 @@
 
         .touch-btn:active {
             background: #6366f1;
+        }
+
+        .shoot-btn {
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            padding: 12px 24px;
+            font-size: 1rem;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 4px 10px rgba(239, 68, 68, 0.4);
+        }
+
+        .shoot-btn:active {
+            transform: scale(0.95);
         }
     </style>
 </head>
@@ -197,28 +214,28 @@
     <!-- Pantalla Inicial -->
     <div id="start-screen" class="overlay">
         <h1>Cazador de Monedas</h1>
-        <p>Avanza por 4 escenarios distintos, junta monedas brillantes y esquiva los obstáculos para completar los objetivos.</p>
+        <p>Avanza por 4 escenarios, junta monedas y dispara a los enemigos para eliminarlos.</p>
         <button class="btn" onclick="startGame()">¡EMPEZAR JUEGO!</button>
     </div>
 
     <!-- Pantalla de Nivel Completado -->
     <div id="stage-screen" class="overlay hidden">
         <h1 id="stage-title">¡Escenario Completado!</h1>
-        <p id="stage-desc">¡Excelente trabajo recolectando tesoros!</p>
+        <p id="stage-desc">¡Excelente trabajo eliminando objetivos y recolectando tesoros!</p>
         <button class="btn" onclick="nextStage()">SIGUIENTE ESCENARIO</button>
     </div>
 
     <!-- Pantalla de Game Over -->
     <div id="gameover-screen" class="overlay hidden">
         <h1 style="background: linear-gradient(45deg, #ef4444, #dc2626); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">¡Juego Terminado!</h1>
-        <p>Haz perdido todas tus vidas. ¿Quieres intentarlo de nuevo?</p>
+        <p>Has perdido todas tus vidas. ¿Quieres intentarlo de nuevo?</p>
         <button class="btn" onclick="restartGame()">REINTENTAR</button>
     </div>
 
     <!-- Pantalla de Victoria Final -->
     <div id="win-screen" class="overlay hidden">
         <h1 style="background: linear-gradient(45deg, #10b981, #059669); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">¡VICTORIA TOTAL!</h1>
-        <p>¡Has recolectado todos los tesoros de los 4 mundos!</p>
+        <p>¡Has dominado todos los 4 mundos!</p>
         <button class="btn" onclick="restartGame()">JUGAR DE NUEVO</button>
     </div>
 
@@ -232,9 +249,11 @@
             <div class="touch-btn" id="btn-down">▼</div>
             <div class="touch-btn" id="btn-right">▶</div>
         </div>
-        <div style="font-size: 0.85rem; color: #64748b; align-self: center;">
-            Usa las flechas del teclado o <b>WASD</b> para moverte
+        <div style="font-size: 0.85rem; color: #64748b; text-align: center;">
+            Moverse: <b>WASD / Flechas</b><br>
+            Disparar: <b>ESPACIO / J</b>
         </div>
+        <button class="shoot-btn" id="btn-shoot">DISPARAR 🎯</button>
     </div>
 </div>
 
@@ -271,18 +290,27 @@
         speed: 4.5,
         dx: 0,
         dy: 0,
+        lastDirX: 1,
+        lastDirY: 0,
         color: '#6366f1'
     };
 
-    // Coleccionables y Enemigos
+    // Coleccionables, Enemigos, Disparos y Partículas
     let coins = [];
     let enemies = [];
+    let bullets = [];
     let particles = [];
 
     // Manejo de Teclas
     const keys = {};
 
-    window.addEventListener('keydown', e => keys[e.key] = true);
+    window.addEventListener('keydown', e => {
+        keys[e.key] = true;
+        if ((e.key === ' ' || e.key === 'j' || e.key === 'J') && gameActive) {
+            shootBullet();
+        }
+    });
+
     window.addEventListener('keyup', e => keys[e.key] = false);
 
     // Soporte Táctil / Botones en pantalla
@@ -298,6 +326,29 @@
     bindTouch('btn-down', 'ArrowDown');
     bindTouch('btn-left', 'ArrowLeft');
     bindTouch('btn-right', 'ArrowRight');
+
+    document.getElementById('btn-shoot').addEventListener('click', () => {
+        if (gameActive) shootBullet();
+    });
+
+    function shootBullet() {
+        // La bala sale disparada en la dirección hacia donde se está moviendo el jugador
+        let vx = player.lastDirX;
+        let vy = player.lastDirY;
+
+        // Si el jugador está quieto, dispara hacia adelante (derecha por defecto)
+        if (vx === 0 && vy === 0) vx = 1;
+
+        const speed = 9;
+        bullets.push({
+            x: player.x,
+            y: player.y,
+            dx: vx * speed,
+            dy: vy * speed,
+            radius: 5,
+            color: '#facc15'
+        });
+    }
 
     function startGame() {
         document.getElementById('start-screen').classList.add('hidden');
@@ -317,10 +368,14 @@
     function initStage() {
         player.x = canvas.width / 2;
         player.y = canvas.height / 2;
+        player.lastDirX = 1;
+        player.lastDirY = 0;
 
         const stage = stages[currentStage];
         stageNameEl.textContent = stage.name;
         targetEl.textContent = stage.target;
+
+        bullets = [];
 
         // Generar Monedas
         coins = [];
@@ -359,18 +414,18 @@
             x: Math.random() * (canvas.width - 60) + 30,
             y: Math.random() * (canvas.height - 60) + 30,
             radius: 14,
-            dx: (Math.random() - 0.5) * speed * 2,
-            dy: (Math.random() - 0.5) * speed * 2,
+            dx: (Math.random() - 0.5) * speed * 2 || 1.5,
+            dy: (Math.random() - 0.5) * speed * 2 || 1.5,
             color: stages[currentStage].enemyColor
         });
     }
 
     function createParticles(x, y, color) {
-        for (let i = 0; i < 10; i++) {
+        for (let i = 0; i < 12; i++) {
             particles.push({
                 x, y,
-                dx: (Math.random() - 0.5) * 6,
-                dy: (Math.random() - 0.5) * 6,
+                dx: (Math.random() - 0.5) * 7,
+                dy: (Math.random() - 0.5) * 7,
                 radius: Math.random() * 4 + 1,
                 color,
                 life: 20
@@ -390,8 +445,47 @@
         if (keys['ArrowLeft'] || keys['a'] || keys['A']) player.dx = -player.speed;
         if (keys['ArrowRight'] || keys['d'] || keys['D']) player.dx = player.speed;
 
+        // Guardar última dirección para apuntar los disparos
+        if (player.dx !== 0 || player.dy !== 0) {
+            const magnitude = Math.hypot(player.dx, player.dy);
+            player.lastDirX = player.dx / magnitude;
+            player.lastDirY = player.dy / magnitude;
+        }
+
         player.x = Math.max(player.radius, Math.min(canvas.width - player.radius, player.x + player.dx));
         player.y = Math.max(player.radius, Math.min(canvas.height - player.radius, player.y + player.dy));
+
+        // Actualizar Disparos
+        bullets.forEach((b, bIndex) => {
+            b.x += b.dx;
+            b.y += b.dy;
+
+            // Eliminar si sale de la pantalla
+            if (b.x < 0 || b.x > canvas.width || b.y < 0 || b.y > canvas.height) {
+                bullets.splice(bIndex, 1);
+                return;
+            }
+
+            // Colisión con Enemigos
+            enemies.forEach((e, eIndex) => {
+                const dist = Math.hypot(b.x - e.x, b.y - e.y);
+                if (dist < b.radius + e.radius) {
+                    createParticles(e.x, e.y, e.color);
+                    bullets.splice(bIndex, 1);
+                    enemies.splice(eIndex, 1);
+
+                    score += 2; // Puntos extra por destruir enemigos
+                    updateUI();
+
+                    // Reaparecer enemigo tras 2 segundos
+                    setTimeout(spawnEnemy, 2000);
+
+                    if (score >= stages[currentStage].target) {
+                        completeStage();
+                    }
+                }
+            });
+        });
 
         // Actualizar Enemigos
         enemies.forEach(e => {
@@ -428,7 +522,6 @@
                 spawnCoin();
                 updateUI();
 
-                // Verificar si se completó la meta del escenario
                 if (score >= stages[currentStage].target) {
                     completeStage();
                 }
@@ -486,6 +579,17 @@
             ctx.stroke();
         });
 
+        // Dibujar Disparos
+        bullets.forEach(b => {
+            ctx.fillStyle = b.color;
+            ctx.beginPath();
+            ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#fef08a';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+        });
+
         // Dibujar Enemigos
         enemies.forEach(e => {
             ctx.fillStyle = e.color;
@@ -512,6 +616,14 @@
         ctx.fill();
         ctx.strokeStyle = '#fff';
         ctx.lineWidth = 3;
+        ctx.stroke();
+
+        // Indicador visual de dirección de disparo
+        ctx.strokeStyle = '#facc15';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(player.x, player.y);
+        ctx.lineTo(player.x + player.lastDirX * 22, player.y + player.lastDirY * 22);
         ctx.stroke();
     }
 
